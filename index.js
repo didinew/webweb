@@ -1,3 +1,13 @@
+// Day 4：下单原理（模拟交易）
+// •	模拟下单（测试环境 / 测试网）
+// •	查看订单状态（已成交 / 未成交）
+// •	取消订单
+/**
+限价单 / 市价单
+maker / taker
+成交 ≠ 下单成功
+*/
+
 import ccxt from 'ccxt'
 import 'dotenv/config'
 
