@@ -33,6 +33,7 @@ console.log('BTC:', balance.free.BTC)
 //   }
 // // }
 
+// 限价单 limit
 // const order = await exchange.createOrder(
 //   'BTC/USDT',
 //   'limit',
