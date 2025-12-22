@@ -62,6 +62,19 @@ export class AccountService {
         this._assertInvariant(acc)
     }
 
+    // 增加资金
+    increase(asset, amount) {
+        const acc = this.accounts.get(asset)
+        if (!acc) {
+            throw new Error(`Asset ${asset} not found`)
+        }
+
+        acc.free += amount
+        acc.total += amount
+
+        this._assertInvariant(acc)
+    }
+
     // 内部验证
     _assertInvariant(acc) {
         if (acc.free + acc.used !== acc.total) {
