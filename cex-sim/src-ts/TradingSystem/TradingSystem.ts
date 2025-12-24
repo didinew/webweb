@@ -127,6 +127,47 @@ private assertInvariant(acc: AssetAccount) {
         if (symbol.endsWith('USDT')) return { base: symbol.replace('USDT',''), quote: 'USDT' }
         throw new Error(`Unsupported symbol: ${symbol}`)
     }
+
+    private settleBuy(base: string, quote: string, price: number, qty: number, fee: number) {
+        const qa = this.accounts.get(quote)
+        const ba = this.accounts.get(base)
+        if (!qa || !ba) throw new Error('Asset not found')
+        const cost = parseFloat((price * qty).toFixed(8))
+        qa.used = parseFloat((qa.used - cost).toFixed(8))
+        qa.total = parseFloat((qa.total - cost).toFixed(8))
+        ba.free = parseFloat((ba.free + qty).toFixed(8))
+        ba.total = parseFloat((ba.total + qty).toFixed(8))
+        if (qa.free >= fee) {
+            qa.free = parseFloat((qa.free - fee).toFixed(8))
+            qa.total = parseFloat((qa.total - fee).toFixed(8))
+        } else if (qa.used >= fee) {
+            qa.used = parseFloat((qa.used - fee).toFixed(8))
+            qa.total = parseFloat((qa.total - fee).toFixed(8))
+        } else {
+            throw new Error('Insufficient funds for fee (BUY)')
+        }
+        this.assertInvariant(qa)
+        this.assertInvariant(ba)
+    }
+
+    private settleSell(base: string, quote: string, price: number, qty: number, fee: number) {
+        const qa = this.accounts.get(quote)
+        const ba = this.accounts.get(base)
+        if (!qa || !ba) throw new Error('Asset not found')
+        const proceeds = parseFloat((price * qty).toFixed(8))
+        ba.used = parseFloat((ba.used - qty).toFixed(8))
+        ba.total = parseFloat((ba.total - qty).toFixed(8))
+        qa.free = parseFloat((qa.free + proceeds).toFixed(8))
+        qa.total = parseFloat((qa.total + proceeds).toFixed(8))
+        if (qa.free >= fee) {
+            qa.free = parseFloat((qa.free - fee).toFixed(8))
+            qa.total = parseFloat((qa.total - fee).toFixed(8))
+        } else {
+            throw new Error('Insufficient funds for fee (SELL)')
+        }
+        this.assertInvariant(qa)
+        this.assertInvariant(ba)
+    }
     
     /** Step 3：撮合成交 */
     //   1. 遍历对手方订单簿
@@ -166,8 +207,16 @@ private assertInvariant(acc: AssetAccount) {
                 this.updateOrder(oppOrder)
             
                 // 计算手续费
-                const feeBuy = this.calculateFee(matchPrice, matchQt, 0.001) 
+                const feeBuy = this.calculateFee(matchPrice, matchQt, 0.001)
                 const feeSell = this.calculateFee(matchPrice, matchQt, 0.001)
+
+                // 资金结算
+                const { base, quote } = this.parseSymbol(order.symbol)
+                if (order.side === 'BUY') {
+                    this.settleBuy(base, quote, matchPrice, matchQt, feeBuy)
+                } else {
+                    this.settleSell(base, quote, matchPrice, matchQt, feeSell)
+                }
 
                 // 保存成交记录
                 this.trades.push({
@@ -195,10 +244,10 @@ private assertInvariant(acc: AssetAccount) {
      /** Step 4：下单 */
     placeOrder(order: Order): Order {
         // 1️⃣ 冻结资金（BUY 冻结价格×数量；SELL 冻结数量）
-const { base, quote } = this.parseSymbol(order.symbol)
-const reserved = order.side === 'BUY' ? order.price * order.quantity : order.quantity
-const freezeAsset = order.side === 'BUY' ? quote : base
-this.freeze(freezeAsset, reserved)
+        const { base, quote } = this.parseSymbol(order.symbol)
+        const reserved = order.side === 'BUY' ? order.price * order.quantity : order.quantity
+        const freezeAsset = order.side === 'BUY' ? quote : base
+        this.freeze(freezeAsset, reserved)
         // 2️⃣ 初始化订单状态
         order.filledQuantity = 0
         order.avgPrice = 0
