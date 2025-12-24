@@ -1,11 +1,25 @@
+import type { Order, OrderService } from '../order/orderService'
+import type { AccountService } from '../account/accountService'
+
+export type Trade = {
+    tradeId: string,
+    orderId: string,
+    price: string,
+    quantity: string,
+    fee: string,
+    feeAsset: string,
+}
 export class TradeService {
-    constructor(orderService, accountService) {
+    private orderService: OrderService
+    private accountService: AccountService
+    private processedTradeIds: Set<string> = new Set()
+    constructor(orderService: OrderService, accountService: AccountService) {
         this.orderService = orderService
         this.accountService = accountService
         this.processedTradeIds = new Set()
     }
     
-    applyTrade(trade){
+    applyTrade(trade: Trade){
         const {
             tradeId,
             orderId,
@@ -39,7 +53,7 @@ export class TradeService {
         this.processedTradeIds.add(tradeId)
     }
 
-    _settle(order, trade) {
+    _settle(order: Order, trade: Trade) {
        const {
         price,
         quantity,
@@ -66,14 +80,14 @@ export class TradeService {
         // 3️⃣ 结算账户（买卖分开）
         if (order.side === 'BUY') {
             // 减少用户的USDT 余额
-            this.accountService.release('USDT', price * quantity)
+            this.accountService.release('USDT', p * q)
             // 增加 BTC
-            this.accountService.increase('BTC', quantity)
+            this.accountService.increase('BTC', q)
         } else {
             // 卖单
         }
         // 4️⃣ 处理手续费
-        this.accountService.decrease(feeAsset, fee)
+        this.accountService.decrease(feeAsset, Number(fee))
     }
 
 }

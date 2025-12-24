@@ -1,12 +1,32 @@
 import crypto from 'crypto'
-export class OderService {
-    constructor(accountService) {
+import type { AccountService } from '../account/accountService'
+
+export type OrderSide = 'BUY' | 'SELL'
+export type OrderStatus = 'NEW' | 'PARTIALLY_FILLED' | 'FILLED' | 'CANCELED'
+
+export type Order = {
+    orderId: string,
+    symbol: string,
+    side: OrderSide,
+    price: number,
+    quantity: number,
+    status: OrderStatus,
+    freezeAmount: number,
+    filledQuantity: number,
+    avgPrice: number,
+    createTime: number,
+}
+
+export class OrderService {
+    private accountService: AccountService
+    private orders: Map<string, Order> = new Map()
+    constructor(accountService: AccountService) {
         this.accountService = accountService
         this.orders = new Map()
     }
     // 创建订单
     // symbol 标识 side BUY|SELL price quantity
-    createOder({symbol, side, price, quantity}) {
+    createOrder({symbol, side, price, quantity}: Order) {
         // 参数校验
         if (price < 0 || quantity < 0) throw new Error('Invalid price or quantity')
         const orderId = crypto.randomUUID()
@@ -22,13 +42,14 @@ export class OderService {
         this.accountService.freeze(asset, freezeAmount)
 
         // 创建订单
+        const orderStatus: OrderStatus = 'NEW'
         const order = {
             orderId,
             symbol,
             side,
             price,
             quantity,
-            status: 'NEW',
+            status: orderStatus,
             freezeAmount,
             filledQuantity: 0,
             avgPrice: 0,
@@ -39,7 +60,7 @@ export class OderService {
     }
     
     // 取消订单
-    cancelOrder(orderId) {
+    cancelOrder(orderId: string) {
         const order = this.orders.get(orderId)
         if (!order) throw new Error('Order not found')
         if (order.status !== 'NEW') throw new Error('Order status is not NEW')
@@ -53,7 +74,7 @@ export class OderService {
         return {...order}
     }
 
-    getOrder(orderId) {
+    getOrder(orderId: string) {
         const order = this.orders.get(orderId)
         if (!order) throw new Error('Order not found')
         return {...order}
