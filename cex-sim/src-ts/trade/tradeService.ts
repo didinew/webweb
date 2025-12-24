@@ -4,9 +4,9 @@ import type { AccountService } from '../account/accountService'
 export type Trade = {
     tradeId: string,
     orderId: string,
-    price: string,
-    quantity: string,
-    fee: string,
+    price: number,
+    quantity: number,
+    fee: number,
     feeAsset: string,
 }
 export class TradeService {

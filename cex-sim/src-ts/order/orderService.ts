@@ -26,7 +26,7 @@ export class OrderService {
     }
     // 创建订单
     // symbol 标识 side BUY|SELL price quantity
-    createOrder({symbol, side, price, quantity}: Order) {
+    createOrder({symbol, side, price, quantity}: {symbol: string, side: OrderSide, price: number, quantity: number}) {
         // 参数校验
         if (price < 0 || quantity < 0) throw new Error('Invalid price or quantity')
         const orderId = crypto.randomUUID()
@@ -77,6 +77,6 @@ export class OrderService {
     getOrder(orderId: string) {
         const order = this.orders.get(orderId)
         if (!order) throw new Error('Order not found')
-        return {...order}
+        return order
     }
 }
