@@ -4,14 +4,15 @@ import crypto from 'crypto'
 // 订单
 interface Order {
     id: string
-    side: 'BUY' | 'SELL' // 订单方向
-    price: number // 订单价格
-    quantity: number // 订单数量
-    status: 'NEW' | 'FILLED' | 'CANCELED' | 'PARTIALLY_FILLED' // 订单状态
-    filledQuantity: number // 已成交数量
-    avgPrice: number // 平均成交价格
-    totalAmount: number // 订单总金额
-    timestamp: number // 订单创建时间
+    symbol: string
+    side: 'BUY' | 'SELL'
+    price: number
+    quantity: number
+    status: 'NEW' | 'FILLED' | 'CANCELED' | 'PARTIALLY_FILLED'
+    filledQuantity: number
+    avgPrice: number
+    totalAmount: number
+    timestamp: number
 }
 
 // 订单薄
@@ -20,11 +21,12 @@ interface OrderBook {
     asks: Order[]
 }
 
-// 账户
-interface Account {
-    total: number // 总金额
-    free: number // 可用金额
-    used: number // 已用金额
+// 资产账户（多资产）
+interface AssetAccount {
+    asset: string
+    total: number
+    free: number
+    used: number
 }
 
 // 交易
@@ -44,36 +46,63 @@ class TradingSystem {
         asks: [],
     }
     trades: Trade[] = []
-    account: Account
+    accounts: Map<string, AssetAccount> = new Map()
     
-    // 构造初始化金额
-    constructor(initalBalance: number) {
-        this.account = {
-            total: initalBalance,
-            free: initalBalance,
-            used: 0,
-        }
+    constructor(initialUSDT: number) {
+        this.createAccount('USDT', initialUSDT)
     }
 
-    // 1. 冻结资金
-    freeze(amount: number) {
-        // 比对冻结的金额是否大于total
-        if (amount > this.account.free) {
-            throw new Error('冻结金额大于未使用金额')
-        }
-        this.account.used += amount
-        this.account.free -= amount
-    }
+    createAccount(asset: string, amount: number) {
+    if (this.accounts.has(asset)) throw new Error(`Asset ${asset} already exists`)
+    this.accounts.set(asset, { asset, total: amount, free: amount, used: 0 })
+}
 
-    // 2. 释放金额
-    release(amount: number) {
-        // 释放的金额不能大于used金额
-        if (amount > this.account.used) {
-            throw new Error('释放金额大于已用金额')
-        }
-        this.account.used -= amount
-        this.account.free += amount
+getAccount(asset: string): AssetAccount {
+    const acc = this.accounts.get(asset)
+    if (!acc) throw new Error(`Asset ${asset} not found`)
+    return { ...acc }
+}
+
+freeze(asset: string, amount: number) {
+    const acc = this.accounts.get(asset)
+    if (!acc) throw new Error(`Asset ${asset} not found`)
+    if (acc.free < amount) throw new Error('冻结金额大于未使用金额')
+    acc.free -= amount
+    acc.used += amount
+    this.assertInvariant(acc)
+}
+
+release(asset: string, amount: number) {
+    const acc = this.accounts.get(asset)
+    if (!acc) throw new Error(`Asset ${asset} not found`)
+    if (acc.used < amount) throw new Error('释放金额大于已用金额')
+    acc.used -= amount
+    acc.free += amount
+    this.assertInvariant(acc)
+}
+
+increase(asset: string, amount: number) {
+    const acc = this.accounts.get(asset)
+    if (!acc) throw new Error(`Asset ${asset} not found`)
+    acc.free += amount
+    acc.total += amount
+    this.assertInvariant(acc)
+}
+
+decrease(asset: string, amount: number) {
+    const acc = this.accounts.get(asset)
+    if (!acc) throw new Error(`Asset ${asset} not found`)
+    if (acc.free < amount) throw new Error('余额不足')
+    acc.free -= amount
+    acc.total -= amount
+    this.assertInvariant(acc)
+}
+
+private assertInvariant(acc: AssetAccount) {
+    if (parseFloat((acc.free + acc.used).toFixed(8)) !== parseFloat(acc.total.toFixed(8))) {
+        throw new Error(`Invariant violated: ${acc.free + acc.used} !== ${acc.total}`)
     }
+}
 
     /** 更新订单状态和 avgPrice */
     private updateOrder(order: Order) {
@@ -92,6 +121,11 @@ class TradingSystem {
      /** 计算手续费 */
     private calculateFee(price: number, qty: number, feeRate: number) {
         return parseFloat((price * qty * feeRate).toFixed(8))
+    }
+
+    private parseSymbol(symbol: string): { base: string; quote: string } {
+        if (symbol.endsWith('USDT')) return { base: symbol.replace('USDT',''), quote: 'USDT' }
+        throw new Error(`Unsupported symbol: ${symbol}`)
     }
     
     /** Step 3：撮合成交 */
@@ -161,9 +195,10 @@ class TradingSystem {
      /** Step 4：下单 */
     placeOrder(order: Order): Order {
         // 1️⃣ 冻结资金（BUY 冻结价格×数量；SELL 冻结数量）
-        const reserved = order.side === 'BUY' ? order.price * order.quantity : order.quantity
-        this.freeze(reserved)
-         console.log('冻结资金:', this.account)
+const { base, quote } = this.parseSymbol(order.symbol)
+const reserved = order.side === 'BUY' ? order.price * order.quantity : order.quantity
+const freezeAsset = order.side === 'BUY' ? quote : base
+this.freeze(freezeAsset, reserved)
         // 2️⃣ 初始化订单状态
         order.filledQuantity = 0
         order.avgPrice = 0
@@ -188,11 +223,15 @@ class TradingSystem {
                 this.orderBooks.asks.sort((a, b) => a.price - b.price)
             }
         } else {
+            const { base, quote } = this.parseSymbol(order.symbol)
             const reservedFull = order.side === 'BUY' ? order.price * order.quantity : order.quantity
             const leftover = order.side === 'BUY'
                 ? Math.max(reservedFull - order.totalAmount, 0)
                 : Math.max(reservedFull - order.filledQuantity, 0)
-            if (leftover > 0) this.release(leftover)
+            if (leftover > 0) {
+                const asset = order.side === 'BUY' ? quote : base
+                this.release(asset, leftover)
+            }
         }
         return order
 
@@ -208,11 +247,13 @@ class TradingSystem {
             throw new Error(`Order not found`)
         }
         // 3. 释放剩余的资金或者数量
+        const { base, quote } = this.parseSymbol(order.symbol)
         const reservedFull = order.side === 'BUY' ? order.price * order.quantity : order.quantity
         const remain = order.side === 'BUY'
             ? Math.max(reservedFull - order.totalAmount, 0)
             : Math.max(reservedFull - order.filledQuantity, 0)
-        this.release(remain)
+        const asset = order.side === 'BUY' ? quote : base
+        this.release(asset, remain)
 
         // 4. 更新订单状态
         order.status = 'CANCELED'
@@ -237,7 +278,8 @@ class TradingSystem {
 
      /** Step 4/5：对账 */
      reconcile() : boolean {
-        const ok = this.account.free + this.account.used === this.account.total
+        const ok = this.accounts?.get('USDT')?.free + this.accounts?.get('USDT')?.used === this.accounts?.get('USDT')?.total &&
+        this.accounts?.get('BTC')?.free + this.accounts?.get('BTC')?.used === this.accounts?.get('BTC')?.total
         if (!ok) throw new Error('对账异常：free + used !== total')
         return true
      }
