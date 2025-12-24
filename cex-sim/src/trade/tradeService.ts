@@ -21,6 +21,7 @@ export class TradeService {
          }
 
         // 获取订单
+       // console.log(this.orderService)
         const order = this.orderService.getOrder(orderId)
         if (!order){
            throw new Error(`Order not found: ${orderId}`)
@@ -45,12 +46,15 @@ export class TradeService {
         fee,
         feeAsset
        }  = trade
-       // 1️⃣ 更新均价（VWAP）
+       const p = Number(price)
+       const q = Number(quantity)
+       if (!Number.isFinite(order.avgPrice)) order.avgPrice = 0
+       if (!Number.isFinite(order.filledQuantity)) order.filledQuantity = 0
        const totalCostBefore = order.avgPrice * order.filledQuantity
-       const totalCostAfter = totalCostBefore + price * quantity
-
-       order.filledQuantity += quantity
-       order.avgPrice = totalCostAfter / order.filledQuantity
+       const totalCostAfter = totalCostBefore + p * q
+       const newFilled = order.filledQuantity + q
+       order.filledQuantity = newFilled
+       order.avgPrice = newFilled > 0 ? totalCostAfter / newFilled : 0
        
          // 2️⃣ 更新订单状态
          if (order.filledQuantity >= order.quantity){
@@ -68,6 +72,8 @@ export class TradeService {
         } else {
             // 卖单
         }
+        // 4️⃣ 处理手续费
+        this.accountService.decrease(feeAsset, fee)
     }
 
 }

@@ -5,9 +5,18 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
+    "dev:ts": "tsx watch src-ts/app.ts",
+    "dev:js": "nodemon --watch src --ext js,mjs,cjs --exec node src/app.js",
+    "build": "tsc",
+    "start:ts": "node dist/app.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^25.0.3",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
 }

@@ -1,4 +1,12 @@
+export type AssetAccount = {
+    asset: string,
+    free: number,
+    used: number,
+    total: number,
+}
 export class AccountService {
+    // 内存账户（后面可换 DB）
+    private accounts: Map<string, AssetAccount> = new Map()
     // 构造一个新的对象
     constructor () {
         // 内存账户（后面可换 DB）
@@ -6,7 +14,7 @@ export class AccountService {
     }
 
     // 创建用户
-    createAccount(asset, amount) {
+    createAccount(asset: string, amount: number) {
         if (this.accounts.has(asset)) {
             throw new Error(`Asset ${asset} already exists`)
         }
@@ -19,7 +27,7 @@ export class AccountService {
     }
 
     // 获取账户
-    getAccount(asset) {
+    getAccount(asset: string) {
         const account = this.accounts.get(asset)
         if (!account) {
             throw new Error(`Account not found`)
@@ -29,7 +37,7 @@ export class AccountService {
     }
     
     //  冻结资金
-    freeze(asset, amount) {
+    freeze(asset: string, amount: number) {
         const acc = this.accounts.get(asset)
         if (!acc) {
             throw new Error(`Asset ${asset} not found`)
@@ -46,7 +54,7 @@ export class AccountService {
     }
 
     // 释放金额
-    release(asset, amount) {
+    release(asset: string, amount: number) {
         const acc = this.accounts.get(asset)
         if (!acc) {
             throw new Error(`Asset ${asset} not found`)
@@ -63,7 +71,7 @@ export class AccountService {
     }
 
     // 增加资金
-    increase(asset, amount) {
+    increase(asset: string, amount: number) {
         const acc = this.accounts.get(asset)
         if (!acc) {
             throw new Error(`Asset ${asset} not found`)
@@ -75,8 +83,25 @@ export class AccountService {
         this._assertInvariant(acc)
     }
 
+    // 减少金额
+    decrease(asset: string, amount: number) {
+        const acc = this.accounts.get(asset)
+        if (!acc) {
+            throw new Error(`Asset ${asset} not found`)
+        }
+
+        if (acc.free < amount) {
+            throw new Error(`Insufficient free`)
+        }
+
+        acc.free -= amount
+        acc.total -= amount
+
+        // this._assertInvariant(acc)
+    }
+
     // 内部验证
-    _assertInvariant(acc) {
+    _assertInvariant(acc: AssetAccount) {
         if (acc.free + acc.used !== acc.total) {
             throw new Error(`Invariant violated: ${acc.free + acc.used} !== ${acc.total}`)
         }
