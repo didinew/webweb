@@ -15,33 +15,47 @@ const spotClient = MODE === 'testnet'
   ? new Spot(process.env.BINANCE_API_KEY, process.env.BINANCE_API_SECRET, { baseURL: 'https://testnet.binance.vision' })
   : null
 // console.log('test mode:', binanceApi.getOption('test'));
-// 帮助函数 打印行情
-async function getTicker(symbol) {
+// 帮助函数 打印行情（支持 mock/testnet）
+async function getTicker(symbols) {
   try {
-    const price = await binanceApi.prices()
-     console.log("=== 行情 ===");
-     symbol.forEach(sym => {
-        if (price[sym]) {
-          console.log(`${sym}: ${price[sym]}`)
-        }
-     })
+    if (MODE === 'testnet') {
+      const { data } = await spotClient.tickerPrice()
+      const mp = new Map(data.map(d => [d.symbol, d.price]))
+      console.log("=== 行情 ===")
+      symbols.forEach(sym => { if (mp.has(sym)) console.log(`${sym}: ${mp.get(sym)}`) })
+    } else {
+      const price = await binanceApi.prices()
+      console.log("=== 行情 ===")
+      symbols.forEach(sym => { if (price[sym]) console.log(`${sym}: ${price[sym]}`) })
+    }
   } catch (e) {
-    console.error('getTicker failed:', e?.message || e)
+    console.error('getTicker failed:', e?.response?.data || e?.message || e)
   }
 }
 
-// 帮助函数：打印账户余额
+// 帮助函数：打印账户余额（支持 mock/testnet）
 async function getAccountBalance() {
   try {
-    const balance = await binanceApi.balance()
-    console.log("=== 账户余额 ===");
-    for(let asset in balance) {
-        if (parseFloat(balance[asset].available) > 0) {
-          console.log(`${asset}: ${balance[asset].available}`)
+    if (MODE === 'testnet') {
+      const { data } = await spotClient.account()
+      console.log("=== 账户余额 ===")
+      data.balances.forEach(b => {
+        const free = parseFloat(b.free)
+        if (free > 0 && ['USDT','ETH','BTC'].includes(b.asset)) {
+          console.log(`${b.asset}}`, { available: b.free, locked: b.locked })
         }
+      })
+    } else {
+      const balance = await binanceApi.balance()
+      console.log("=== 账户余额 ===");
+      for(let asset in balance) {
+          if (parseFloat(balance[asset].available) > 0 && ['USDT','ETH','BTC'].includes(asset)) {
+            console.log(`${asset}}`, balance[asset])
+          }
+      }
     }
   } catch (e) {
-    console.error('getAccountBalance failed:', e?.message || e)
+    console.error('getAccountBalance failed:', e?.response?.data || e?.message || e)
   }
 }
 
@@ -53,6 +67,7 @@ async function placeOrder(symbol, side, quantity, price, type = 'LIMIT') {
     const s = info.data.symbols.find(x => x.symbol === symbol)
     if (!s) throw new Error(`Invalid symbol: ${symbol}`)
     const filters = Object.fromEntries(s.filters.map(f => [f.filterType, f]))
+    console.log('filters:', filters)
     const stepSize = parseFloat(filters.LOT_SIZE?.stepSize ?? '0.00000001')
     const minQty = parseFloat(filters.LOT_SIZE?.minQty ?? '0')
     const tickSize = parseFloat(filters.PRICE_FILTER?.tickSize ?? '0.00000001')
@@ -65,14 +80,14 @@ async function placeOrder(symbol, side, quantity, price, type = 'LIMIT') {
       if (side === 'BUY') {
         // 解释：此处将 quantity 作为报价币金额使用（quoteOrderQty）
         const res = await spotClient.newOrder(symbol, 'BUY', 'MARKET', { quoteOrderQty: String(qty), newOrderRespType: 'FULL' })
-        console.log('=== 下单 ===')
+        console.log('=== 下单 ===', side)
         console.log(res.data)
         return
       } else {
         qty = Math.max(qty, minQty)
         qty = roundTo(qty, stepSize)
         const res = await spotClient.newOrder(symbol, 'SELL', 'MARKET', { quantity: String(qty), newOrderRespType: 'FULL' })
-        console.log('=== 下单 ===')
+        console.log('=== 下单 ===', side)
         console.log(res.data)
         return
       }
@@ -83,8 +98,21 @@ async function placeOrder(symbol, side, quantity, price, type = 'LIMIT') {
     qty = roundTo(qty, stepSize)
     px = roundTo(Number(px), tickSize)
     if (px && qty && px * qty < minNotional) qty = roundTo(minNotional / px, stepSize)
+    const pre = (await spotClient.account()).data
     const res = await spotClient.newOrder(symbol, side, 'LIMIT', { quantity: String(qty), price: String(px), timeInForce: 'GTC', newOrderRespType: 'FULL' })
-    console.log('=== 下单 ===')
+    const post = (await spotClient.account()).data
+    const exQty = Number(res.data.executedQty || 0)
+    const cumQuote = Number(res.data.cummulativeQuoteQty || 0)
+    const fees = (res.data.fills || []).reduce((acc, f) => { const a = f.commissionAsset; const v = Number(f.commission); acc[a] = (acc[a] || 0) + v; return acc }, {})
+    const avgPrice = exQty ? parseFloat((cumQuote / exQty).toFixed(8)) : 0
+    const usdtPre = pre.balances.find(b => b.asset === 'USDT') || { free: '0', locked: '0' }
+    const usdtPost = post.balances.find(b => b.asset === 'USDT') || { free: '0', locked: '0' }
+    const btcPre = pre.balances.find(b => b.asset === 'BTC') || { free: '0', locked: '0' }
+    const btcPost = post.balances.find(b => b.asset === 'BTC') || { free: '0', locked: '0' }
+    const usdtDeltaFree = parseFloat((Number(usdtPost.free) - Number(usdtPre.free)).toFixed(8))
+    const usdtDeltaLocked = parseFloat((Number(usdtPost.locked) - Number(usdtPre.locked)).toFixed(8))
+    const btcDeltaFree = parseFloat((Number(btcPost.free) - Number(btcPre.free)).toFixed(8))
+    console.log({ executedQty: exQty, cummulativeQuoteQty: cumQuote, avgPrice, fees, usdtDeltaFree, usdtDeltaLocked, btcDeltaFree })
     console.log(res.data)
   } catch (e) {
     const msg = e?.response?.data || e?.body || e?.message || String(e)
@@ -98,33 +126,16 @@ async function main() {
     await getTicker(['BTCUSDT','ETHUSDT','BNBUSDT']);
     // 查询账户余额
     await getAccountBalance()
-// 456: 100.00000000
-// ETH: 0.99000000
-// BTC: 1.00456000
-// LTC: 5.00000000
-// BNB: 1.00000000
-// USDT: 9665.94589200
-// TRX: 1744.00000000
-// XRP: 222.00000000
-    // const info = await binanceApi.exchangeInfo();
-    // const s = info.symbols.find(x => x.symbol === 'BTCUSDT');
-    // console.log('filters:', s?.filters);
 
     // 模拟下单
    // 限价买入（自动按过滤规则修正）
-    await placeOrder('BTCUSDT', 'BUY', 0.001, 20000, 'LIMIT')
+    await placeOrder('BTCUSDT', 'BUY', 0.001, 90000, 'LIMIT')
 
     // 市价卖出（price 可为 null）
     await placeOrder('ETHUSDT', 'SELL', 0.01, null, 'MARKET')
  // 查询账户余额
     await getAccountBalance()
-// ETH: 0.98000000
-// BTC: 1.00456000
-// LTC: 5.00000000
-// BNB: 1.00000000
-// USDT: 9675.22949200
-// TRX: 1744.00000000
-// XRP: 222.00000000
+
 }
 
 main()
