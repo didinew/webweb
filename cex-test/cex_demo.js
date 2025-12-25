@@ -129,6 +129,7 @@ async function main() {
 
     // 模拟下单
    // 限价买入（自动按过滤规则修正）
+   
     await placeOrder('BTCUSDT', 'BUY', 0.001, 90000, 'LIMIT')
 
     // 市价卖出（price 可为 null）
