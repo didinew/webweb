@@ -66,5 +66,19 @@ async function login() {
     // 捕获任意步骤的异常，将错误信息展示到页面（ error 响应式变量）
     error.value = e?.message || String(e)
   }
+
 }
+
+ethereum.on('accountsChanged', accounts => {
+  // 用户切钱包
+  console.log('accountsChanged', accounts)
+})
+
+ethereum.on('chainChanged', chainId => {
+  // 用户切网络
+  window.location.reload()
+  // 刷新页面，确保与新网络的连接
+  // 注意：chainId 是十六进制字符串，需要转换为十进制数字
+  console.log('chainChanged', chainId)
+})
 </script>
